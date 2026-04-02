@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 """
-auto_dnn_mpd.py
-클래스당 하나의 dnn.mpd를 data/{class}/ 아래에 생성한다.
-개별 video MPD(data/{class}/{vid}/multi_resolution.mpd)에서는 DNN 노드를 제거한다.
+inject_dnn_into_video_mpd.py
 
-Flow (NAS 방식과 동일):
-  player detects new class
-  → GET data/{class}/dnn.mpd
-  → download decoder.pt + coarse_sr.pt from CDN
-  → POST /dnn (Flask server loads model)
-  → stream video segments (POST /uploader per segment)
+각 video MPD(data/{class}/{vid}/multi_resolution.mpd)에 다시 <DNN ...> 노드를 삽입한다.
+모델 파일은 계속 클래스 폴더(dash/model/{class}/decoder.pt, coarse_sr.pt)를 공유한다.
 
 Usage:
-    python3 auto_dnn_mpd.py [data_root]
+    python3 inject_dnn_into_video_mpd.py [data_root]
 """
 
 import os
@@ -24,12 +18,16 @@ DATA_ROOT = "/home/harim/Shorts_Codebook_Streaming_Testbed/cdn-server/contentSer
 DNN_HOST  = "http://163.152.162.202:8080"
 
 MPD_NS = "urn:mpeg:dash:schema:mpd:2011"
-NS     = {"mpd": MPD_NS}
+NS = {"mpd": MPD_NS}
 ET.register_namespace("", MPD_NS)
 
 
-def write_pretty_xml(root_elem, out_path):
-    rough = ET.tostring(root_elem, encoding="utf-8")
+def tag(name: str) -> str:
+    return f"{{{MPD_NS}}}{name}"
+
+
+def pretty_write(root: ET.Element, out_path: str) -> None:
+    rough = ET.tostring(root, encoding="utf-8")
     reparsed = minidom.parseString(rough)
     pretty = reparsed.toprettyxml(indent="  ")
     pretty = "\n".join(line for line in pretty.splitlines() if line.strip())
@@ -37,49 +35,74 @@ def write_pretty_xml(root_elem, out_path):
         f.write(pretty)
 
 
-def make_class_dnn_mpd(class_dir, class_name):
-    """data/{class}/dnn.mpd 생성 — DNN 노드만 포함."""
-    tag = lambda name: f"{{{MPD_NS}}}{name}"
+def infer_fps_from_mpd(root: ET.Element) -> str:
+    # 1) DNN/frameRate가 이미 있으면 유지
+    old_dnn = root.find("mpd:DNN", NS)
+    if old_dnn is not None:
+        fr = old_dnn.find("mpd:frameRate", NS)
+        if fr is not None and fr.get("fps"):
+            return fr.get("fps")
 
-    root = ET.Element(tag("MPD"))
-    dnn_url = f"{DNN_HOST}/dash/model/{class_name}/"
+    # 2) Representation frameRate에서 추출
+    rep = root.find(".//mpd:Representation", NS)
+    if rep is not None:
+        frame_rate = rep.get("frameRate")
+        if frame_rate:
+            if "/" in frame_rate:
+                try:
+                    num, den = frame_rate.split("/")
+                    fps = round(float(num) / float(den))
+                    return str(int(fps))
+                except Exception:
+                    pass
+            try:
+                return str(int(float(frame_rate)))
+            except Exception:
+                pass
 
-    dnn = ET.SubElement(root, tag("DNN"), {"url": dnn_url})
-    ET.SubElement(dnn, tag("Model"),     {"name": "decoder.pt"})
-    ET.SubElement(dnn, tag("Model"),     {"name": "coarse_sr.pt"})
-    ET.SubElement(dnn, tag("cluster"),   {"id": class_name})
-    ET.SubElement(dnn, tag("frameRate"), {"fps": "30"})
-
-    out_path = os.path.join(class_dir, "dnn.mpd")
-    write_pretty_xml(root, out_path)
-    print(f"  [DNN MPD] {out_path}")
+    # 3) fallback
+    return "30"
 
 
-def strip_dnn_from_video_mpd(mpd_path):
-    """video MPD에서 DNN 노드 제거 (있으면)."""
+def upsert_dnn_node(mpd_path: str, class_name: str) -> None:
     tree = ET.parse(mpd_path)
     root = tree.getroot()
 
-    old = root.findall("mpd:DNN", NS)
-    if not old:
-        return
-    for d in old:
-        root.remove(d)
+    # 기존 DNN 제거
+    for dnn in root.findall("mpd:DNN", NS):
+        root.remove(dnn)
 
-    rough = ET.tostring(root, encoding="utf-8")
-    reparsed = minidom.parseString(rough)
-    pretty = reparsed.toprettyxml(indent="  ")
-    pretty = "\n".join(line for line in pretty.splitlines() if line.strip())
-    with open(mpd_path, "w", encoding="utf-8") as f:
-        f.write(pretty)
-    print(f"  [CLEAN]  {mpd_path}")
+    fps = infer_fps_from_mpd(root)
+    dnn_url = f"{DNN_HOST}/dash/model/{class_name}/"
+
+    # MPD 루트 바로 아래에 삽입
+    dnn = ET.Element(tag("DNN"), {"url": dnn_url})
+    ET.SubElement(dnn, tag("Model"), {"name": "decoder.pt"})
+    ET.SubElement(dnn, tag("Model"), {"name": "coarse_sr.pt"})
+    ET.SubElement(dnn, tag("cluster"), {"id": class_name})
+    ET.SubElement(dnn, tag("frameRate"), {"fps": fps})
+
+    # 가능하면 ProgramInformation 뒤, 없으면 맨 앞쪽에 삽입
+    inserted = False
+    children = list(root)
+    for idx, child in enumerate(children):
+        if child.tag == tag("ProgramInformation"):
+            root.insert(idx + 1, dnn)
+            inserted = True
+            break
+
+    if not inserted:
+        root.insert(0, dnn)
+
+    pretty_write(root, mpd_path)
+    print(f"[OK] injected DNN into {mpd_path}")
 
 
 def main():
     base = sys.argv[1] if len(sys.argv) > 1 else DATA_ROOT
 
     if not os.path.isdir(base):
-        print(f"Base dir not found: {base}")
+        print(f"[ERR] base dir not found: {base}")
         sys.exit(1)
 
     for class_name in sorted(os.listdir(base)):
@@ -89,17 +112,19 @@ def main():
 
         print(f"\n>>> class: {class_name}")
 
-        # 1) 클래스 단위 dnn.mpd 생성
-        make_class_dnn_mpd(class_dir, class_name)
-
-        # 2) 개별 video MPD에서 DNN 노드 제거
         for vid_name in sorted(os.listdir(class_dir)):
             vid_dir = os.path.join(class_dir, vid_name)
             if not os.path.isdir(vid_dir):
                 continue
+
             mpd_path = os.path.join(vid_dir, "multi_resolution.mpd")
-            if os.path.exists(mpd_path):
-                strip_dnn_from_video_mpd(mpd_path)
+            if not os.path.exists(mpd_path):
+                continue
+
+            try:
+                upsert_dnn_node(mpd_path, class_name)
+            except Exception as e:
+                print(f"[ERR] {mpd_path}: {e}")
 
 
 if __name__ == "__main__":

@@ -35811,6 +35811,7 @@ function FragmentController(config) {
         //  (25.12.02) DNN
 
         chunk.vid = dnnCtx.vid;
+        // chunk.vid =  window.DNN_STATE.byVid[vid];
         chunk.streamId = streamId;
         chunk.mediaInfo = request.mediaInfo;
         chunk.segmentType = request.type;
