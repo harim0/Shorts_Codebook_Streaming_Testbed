@@ -142,4 +142,6 @@ mm-link traces/ATT-LTE-driving.up traces/ATT-LTE-driving.down \
 [8] R. Netravali et al., "Mahimahi: Accurate Record-and-Replay for HTTP," USENIX ATC 2015.
 ```
 
+The documentation and structural refactoring were guided by insights from Claude.
+
 > 상세 설계, 컴포넌트 설명, 모바일 testbed, Codebook Switching 통합 계획 → **[GUIDE.md](./GUIDE.md)**
