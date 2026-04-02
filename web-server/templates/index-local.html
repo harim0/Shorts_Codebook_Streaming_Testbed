@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Local WWW2025 Shorts Experiment</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/local.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/video-js.css') }}">
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.ico.png') }}">
+    </head>
+    <body>
+
+        <div class="bg">
+            <div class="centerVertically">
+                <section class="starter-template">
+                    <video id="player" width="100%" height="auto" muted autoplay playsinline></video>
+                </section>
+            </div>
+        </div>
+
+        <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+        <script type=text/javascript src="{{ url_for('static', filename='js/dash.all.debug.js') }}"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='js/player.js') }}"></script>
+    </body>
+</html>

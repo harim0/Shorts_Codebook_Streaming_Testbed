@@ -1,0 +1,182 @@
+[
+    {
+        "pid": "Animal/SDR_Animal_23rp",
+        "class": "Animal",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Animal/SDR_Animal_3k7l",
+        "class": "Animal",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Animal/SDR_Animal_ddp0",
+        "class": "Animal",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Animal/SDR_Animal_nhmc",
+        "class": "Animal",
+        "duration": 5.033,
+        "watch_time": 3.775
+    },
+    {
+        "pid": "Animal/SDR_Animal_vlhk",
+        "class": "Animal",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Cooking/SDR_Cooking_7l79",
+        "class": "Cooking",
+        "duration": 5.1,
+        "watch_time": 3.825
+    },
+    {
+        "pid": "Cooking/SDR_Cooking_cng9",
+        "class": "Cooking",
+        "duration": 5.1,
+        "watch_time": 3.825
+    },
+    {
+        "pid": "Cooking/SDR_Cooking_khpm",
+        "class": "Cooking",
+        "duration": 5.067,
+        "watch_time": 3.8
+    },
+    {
+        "pid": "Cooking/SDR_Cooking_kncj",
+        "class": "Cooking",
+        "duration": 5.033,
+        "watch_time": 3.775
+    },
+    {
+        "pid": "Cooking/SDR_Cooking_l76l",
+        "class": "Cooking",
+        "duration": 5.033,
+        "watch_time": 3.775
+    },
+    {
+        "pid": "Dance/SDR_Dance_14fy",
+        "class": "Dance",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Dance/SDR_Dance_fjgk",
+        "class": "Dance",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Dance/SDR_Dance_wn4v",
+        "class": "Dance",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Dance/SDR_Hobby_aho4",
+        "class": "Dance",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Dance/SDR_Hobby_wiiz",
+        "class": "Dance",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Gameplay/SDR_Gameplay_2lie",
+        "class": "Gameplay",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Gameplay/SDR_Gameplay_gf0x",
+        "class": "Gameplay",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Gameplay/SDR_Gameplay_hph5",
+        "class": "Gameplay",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Gameplay/SDR_Gameplay_x76g",
+        "class": "Gameplay",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Gameplay/SDR_Gameplay_y3bx",
+        "class": "Gameplay",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Hobby/SDR_Cooking_x72t",
+        "class": "Hobby",
+        "duration": 5.067,
+        "watch_time": 3.8
+    },
+    {
+        "pid": "Hobby/SDR_Hobby_cdbw",
+        "class": "Hobby",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Hobby/SDR_Hobby_d7iu",
+        "class": "Hobby",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Hobby/SDR_Hobby_s1k6",
+        "class": "Hobby",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Hobby/SDR_Hobby_xvxz",
+        "class": "Hobby",
+        "duration": 5.0,
+        "watch_time": 3.75
+    },
+    {
+        "pid": "Speech/SDR_Society_wvxk",
+        "class": "Speech",
+        "duration": 5.067,
+        "watch_time": 3.8
+    },
+    {
+        "pid": "Speech/SDR_Speech_4yln",
+        "class": "Speech",
+        "duration": 5.1,
+        "watch_time": 3.825
+    },
+    {
+        "pid": "Speech/SDR_Speech_8rcj",
+        "class": "Speech",
+        "duration": 5.1,
+        "watch_time": 3.825
+    },
+    {
+        "pid": "Speech/SDR_Speech_c0cs",
+        "class": "Speech",
+        "duration": 5.033,
+        "watch_time": 3.775
+    },
+    {
+        "pid": "Speech/SDR_Speech_wi96",
+        "class": "Speech",
+        "duration": 5.1,
+        "watch_time": 3.825
+    }
+]

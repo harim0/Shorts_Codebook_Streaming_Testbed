@@ -1,0 +1,3 @@
+dnn recv: Animal/decoder.pt
+dnn recv: Animal/coarse_sr.pt
+tmp_video/_0_1_MediaSegment_0/output.mp4 thread [elapsed]: 3.1670563220977783 sec inference_idx: 0

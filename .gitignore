@@ -1,0 +1,21 @@
+# Logs
+abr-server/logs/
+web-server/dnn_log/
+
+# Python Cache
+**/__pycache__/
+*.pyc
+
+# Nginx Source & Build files
+cdn-server/contentServer/nginx-1.20.2/
+
+# Data & Models
+cdn-server/contentServer/dash/data/
+cdn-server/contentServer/dash/model/
+web-server/downloads/
+web-server/result/
+web-server/tmp_video/
+
+# Media Files
+*.mp4
+simulation/results/*.mp4
