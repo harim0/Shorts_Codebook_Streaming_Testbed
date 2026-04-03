@@ -12,3 +12,9 @@ dnn recv: Cooking/decoder.pt
 dnn recv: Cooking/coarse_sr.pt
 dnn recv: Dance/coarse_sr.pt
 dnn recv: Dance/decoder.pt
+dnn recv: Gameplay/decoder.pt
+dnn recv: Gameplay/coarse_sr.pt
+dnn recv: Hobby/decoder.pt
+dnn recv: Hobby/coarse_sr.pt
+dnn recv: Speech/coarse_sr.pt
+dnn recv: Speech/decoder.pt

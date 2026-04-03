@@ -1,42 +1,51 @@
-# Shorts-Optimized Neural Adaptive Streaming Testbed
+# Shorts Codebook-Switch SR Streaming Testbed
 
-> Shorts(TikTok-style) 환경에서 **DNN Super-Resolution + ABR**을 통합 실험하기 위한 Streaming Testbed.
-> [Dashlet (NSDI'23)](https://www.usenix.org/conference/nsdi23/presentation/li-zhuqi)의 Shorts prefetch 전략과 [NAS (OSDI'18)](https://www.usenix.org/conference/osdi18/presentation/yeo)의 scalable SR DNN 파이프라인을 결합.
-> **Codebook Switching SR** (tex-VQVAE + SRResNet) 모델의 모바일 클라이언트 배포를 목표로 한다.
-
----
-
-## Origin & Contribution
-
-| Base Repo | Paper | 역할 | 본 repo 변경 |
-|-----------|-------|------|------------|
-| [PrincetonUniversity/Dashlet](https://github.com/PrincetonUniversity/Dashlet) | NSDI'23 | Shorts prefetch 큐, sequence 기반 재생 | `player.js`, `sequence.json` 확장 |
-| [kaist-ina/NAS_demo](https://github.com/kaist-ina/NAS_demo) | OSDI'18 | SR DNN pipeline, ABR 연동 | `dnn_appLocalServer.py`, `process.py`, `dash.js` 수정 |
+> Shorts(TikTok-style) 환경에서 **Codebook Switching SR** (tex-VQVAE + SRResNet) 모델을 DASH ABR 파이프라인에 통합한 실험 테스트베드.
+> 270p(LR) 세그먼트만 전송하고 클라이언트에서 x4 SR로 1080p를 복원하는 구조.
 
 ---
 
-## System At a Glance
+## 모델 개요
 
-| Component | Role | Port | Key File |
-|-----------|------|------|----------|
-| **Browser App** | sequence 재생, prefetch 큐 관리 | — | `web-server_www/static/js/player.js` |
-| **dash.js (수정)** | MPD 파싱, ABR 연동, DNN 요청 | — | `web-server_www/static/js/dash.all.debug.js` |
-| **App/Experiment Server** | Flask: DNN config/chunk 수신, SR 파이프라인 | **:8081** | `web-server_www/dnn_appLocalServer.py` |
-| **ABR Server** | E-MPC: buffer+throughput → quality 결정 | **:8333/8334** | `abr-server/empc_server_dashlet.py` |
-| **CDN Server** | Nginx: MPD, 영상 segment, DNN chunk 제공 | **:8080** | `cdn-server/contentServer/` |
-| **SR Pipeline** | decode → NAS SR → encode (multi-process) | — | `web-server_www/super_resolution/process.py` |
+| 단계 | 내용 |
+|------|------|
+| **Stage 1** | tex-VQVAE (Encoder + Decoder + Codebook + Coarse-SR(SRResNet)) 일반 학습 |
+| **Stage 2** | codebook histogram 기반 KNN 클러스터링 + Meta-learning (REPTILE) → per-cluster 특화 모델 |
+| **전송** | LR 270p 세그먼트 + i-matrix + Decoder + Coarse-SR (클러스터당 1쌍) |
+| **클라이언트** | 사전 배포된 Codebook(quantize.embedding.weight) + 수신 모델로 실시간 SR |
+
+**Portrait 기준** (Shorts/TikTok): LR W=270, H=480 → HR W=1080, H=1920 (x4 복원, 9:16)
 
 ---
 
-## One-line Data Flow
+## 시스템 구성
+
+| 컴포넌트 | 역할 | 포트 | 핵심 파일 |
+|---------|------|------|---------|
+| **Browser App** | sequence 재생, prefetch 큐(QUEUE_LEN=5) 관리 | — | `web-server/static/js/player.js` |
+| **dash.js (수정)** | MPD 파싱, imatrix/model DL, segment SR 송신 | — | `web-server/static/js/dash.all.debug.js` |
+| **Flask Server** | 세그먼트·모델·imatrix 수신 → SR 파이프라인 제어 | **:8081** | `web-server/dnn_appLocalServer.py` |
+| **ABR Server** | MPC: buffer+throughput → quality 결정 | **:8334** | `abr-server/dnn_custom_server_mpc.py` |
+| **CDN Server** | Nginx: MPD, 270p segment, imatrix, 모델 파일 제공 | **:8080** | `cdn-server/contentServer/` |
+| **SR Pipeline** | decode → CodebookSR 추론 → encode | — | `web-server/super_resolution/process.py` |
+
+---
+
+## 데이터 플로우
 
 ```
 Browser
-  → GET MPD (CDN :8080)
-  → POST state (ABR :8333) → quality decision
-  → GET segment (CDN :8080)
-  → POST /uploader (App :8081) → SR pipeline → MSE buffer
-  [optional] → GET DNN_chunk (CDN) → POST /dnn_chunk → inference_idx 업데이트
+  → GET  CDN:8080  /dash/data/{class}/{vid}/multi_resolution.mpd
+  → GET  CDN:8080  /dash/data/{class}/{vid}/imatrix.pt
+  → POST Flask:8081 /imatrix   (i-matrix → dnn_queue)
+  → GET  CDN:8080  /dash/model/{class}/decoder.pt
+  → GET  CDN:8080  /dash/model/{class}/coarse_sr.pt
+  → POST Flask:8081 /dnn       (model → dnn_queue, 클래스당 1회)
+  ─── 세그먼트 루프 ───
+  → POST ABR:8334              (buffer/throughput → quality 결정)
+  → GET  CDN:8080  /dash/data/{class}/{vid}/segment_0_{idx}.m4s  (270p LR)
+  → POST Flask:8081 /uploader  (segment bytes → SR pipeline → 1080p mp4 반환)
+  → MSE buffer append
 ```
 
 ---
@@ -49,99 +58,70 @@ sudo systemctl start nginx
 
 # 2. ABR Server
 cd abr-server
-python dnn_custom_server_mpc.py 
+python dnn_custom_server_mpc.py
 
-# 3. App/Experiment Server (SR + Flask)
-cd web-server_www
-python dnn_appLocalServer.py --quality ultra 
+# 3. Flask + SR Server
+cd web-server
+python dnn_appLocalServer.py
 
-# 4. sequence.json 에 재생할 video pid 목록 설정
-# web-server_www/static/sequence.json
-
-# 5. 브라우저 (Chrome)
-# DevTools → Network → Disable cache
+# 4. 브라우저 (Chrome, DevTools → Disable cache)
 # http://163.152.162.202:8081/
 ```
 
-> 상세 설치 및 설정은 [GUIDE.md](./GUIDE.md) 참조.
+> 상세 설계, 컴포넌트 설명, 실험 결과 → [GUIDE.md](./GUIDE.md)
 
 ---
 
-## Directory Structure
+## 디렉토리 구조
 
 ```
-Dashlet_www/
-├── web-server_www/                 # App/Experiment Server
-│   ├── dnn_appLocalServer.py       # Flask 메인 서버 (SR + DNN 라우팅)
-│   ├── app-local.py                # SR 없는 경량 서버
-│   ├── super_resolution/
-│   │   ├── process.py              # 멀티프로세스 SR 파이프라인
-│   │   └── model/
-│   │       ├── NAS.py              # Scalable DNN (Multi_Network)
-│   │       └── {low,medium,high,ultra}/   # pre-trained weights
-│   ├── static/js/
-│   │   ├── player.js               # SuperPlayer (sequence 재생 로직)
-│   │   └── dash.all.debug.js       # 수정된 dash.js (DNN 연동)
-│   └── static/sequence.json        # 재생 플레이리스트
+Shorts_Codebook_Streaming_Testbed/
+├── web-server/
+│   ├── dnn_appLocalServer.py          # Flask 메인 서버 (SR + 라우팅)
+│   └── super_resolution/
+│       ├── process.py                 # 멀티프로세스 SR 파이프라인
+│       ├── codebook_sr.py             # CodebookSR 추론 래퍼
+│       └── model/
+│           ├── tex_vqvae8.py          # tex-VQVAE 모델 정의
+│           └── {class}/
+│               ├── decoder.pt         # per-cluster Decoder 가중치
+│               └── coarse_sr.pt       # per-cluster Coarse-SR 가중치
 ├── abr-server/
-│   ├── empc_server_dashlet.py      # E-MPC ABR server
-│   └── abrAlgorithmCollection*.py  # ABR 알고리즘 모음
-└── cdn-server/contentServer/
-    ├── dash/data/{vid}/            # 해상도별 DASH segments
-    └── dash/model/{vid}/ultra/     # DNN_chunk_*.pth
+│   └── dnn_custom_server_mpc.py       # MPC ABR 서버 (:8334)
+├── cdn-server/contentServer/
+│   └── dash/
+│       ├── data/{class}/{vid}/
+│       │   ├── multi_resolution.mpd   # DASH manifest
+│       │   ├── imatrix.pt             # HR→encoder 기반 i-matrix (150fr, 240×135)
+│       │   └── segment_0_{idx}.m4s    # 270p LR 세그먼트
+│       └── model/{class}/
+│           ├── decoder.pt             # Decoder 가중치
+│           └── coarse_sr.pt           # Coarse-SR 가중치
+└── simulation/
+    ├── run_simulation.py              # E2E 시뮬레이션 (PSNR 포함)
+    ├── plot_results.py                # 결과 시각화
+    └── results/sim_results.json       # 시뮬레이션 결과 (30 videos)
 ```
 
 ---
 
-## ToDO : Mobile Testbed 구성 
+## ToDo: Mobile Testbed
 
-### NEMO (MobiCom'20) 참조 구조
+NEMO (MobiCom'20) 참조 — Android ExoPlayer + PyTorch Mobile / ExecuTorch 기반 SR 추론으로 확장 예정.
 
-[kaist-ina/nemo](https://github.com/kaist-ina/nemo) — NAS 저자 동일 그룹, Android 모바일 SR 스트리밍 테스트베드.
-
-| 항목 | NEMO / Palantir | 현재 (NAS+Dashlet/Codebook) |
-|------|:---------------:|:------------------:|
-| SR 위치 | 코덱 디코더 내 (libvpx 수정) | process.py 별도 파이프라인 |
-| 추론 엔진 | Qualcomm SNPE SDK | PyTorch Mobile / ExecuTorch |
-| 프레임 선택 | Anchor Point (GOP 기반) | inference_idx (레이어 기반) |
-| 클라이언트 | Android ExoPlayer | Browser (DASH.js) → Android 확장 예정 |
-
-### 필요 도구 (모바일 클라이언트 가정 시)
-
-| 도구 | 역할 | 비고 |
-|------|------|------|
-| **Android Studio** | ExoPlayer 기반 플레이어 빌드 | NEMO `player/` 참조 |
-| **Qualcomm SNPE SDK v1.40+** | Snapdragon NPU 추론 | TF → `.dlc` 변환 필요 |
-| **PyTorch Mobile / ExecuTorch** | 범용 Android CPU 추론 | INT8, XNNPACK backend |
-| **Android ADB** | 기기 연동 + 로그 수집 | Mahimahi UsbShell 연동 가능 |
-| **ARM64 cross-compiler** | libvpx ARM64 빌드 | `nemo_client_arm64.sh` 참조 |
-| **Mahimahi** | 네트워크 에뮬레이션 (LTE/5G 트레이스) | LinkShell + DelayShell 조합 |
-| **Xvfb** | 헤드리스 브라우저 실행 | `sudo apt-get install xvfb` |
-| **tc (traffic control)** | 간단한 대역폭 제한 | `tc qdisc add dev eth0 root tbf ...` |
-
-```bash
-# Mahimahi LTE 환경 예시 (2Mbps, 50ms RTT)
-mm-link traces/ATT-LTE-driving.up traces/ATT-LTE-driving.down \
-  mm-delay 25 \
-  -- python web-server_www/dnn_appLocalServer.py
-```
-
+| 항목 | 현재 (Browser) | 목표 (Android) |
+|------|:---:|:---:|
+| 추론 위치 | process.py (서버 GPU) | 기기 내 (PyTorch Mobile) |
+| 전송 가정 | 서버에서 SR 후 1080p 반환 | 기기에서 직접 SR (270p만 수신) |
+| Codebook | 서버 메모리 | 앱 번들 사전 배포 |
 
 ---
 
 ## References
 
 ```
-[1] H. Yeo et al., "Neural Adaptive Content-aware Internet Video Delivery," USENIX OSDI 2018.
-[2] Z. Li et al., "Dashlet: Taming Swipe Uncertainty for Robust Short Video Streaming," USENIX NSDI 2023.
-[3] B. Guo et al., "LAR-SR: A Local Autoregressive Model for Image Super-Resolution," CVPR 2022.
-[4] H. Yeo et al., "NEMO: Enabling Neural-enhanced Video Streaming on Commodity Mobile Devices," ACM MobiCom 2020.
-[5] "Palantir: Efficient Super Resolution for Ultra-high-definition Live Streaming," ACM MMSys 2025.
-[6] S. Park et al., "EOS: Energy-Optimized SR on Mobile Devices for Live 360-Degree Videos," ACM MobiCom 2025.
-[7] H. Mao et al., "Neural Adaptive Video Streaming with Pensieve," ACM SIGCOMM 2017.
-[8] R. Netravali et al., "Mahimahi: Accurate Record-and-Replay for HTTP," USENIX ATC 2015.
+[1] H. Yeo et al., "Neural Adaptive Content-aware Internet Video Delivery," OSDI 2018.
+[2] Z. Li et al., "Dashlet: Taming Swipe Uncertainty for Robust Short Video Streaming," NSDI 2023.
+[3] H. Yeo et al., "NEMO: Enabling Neural-enhanced Video Streaming on Commodity Mobile Devices," MobiCom 2020.
+[4] H. Mao et al., "Neural Adaptive Video Streaming with Pensieve," SIGCOMM 2017.
 ```
-
-The documentation and structural refactoring were guided by insights from Claude.
-
-> 상세 설계, 컴포넌트 설명, 모바일 testbed, Codebook Switching 통합 계획 → **[GUIDE.md](./GUIDE.md)**
