@@ -62,7 +62,7 @@ python dnn_custom_server_mpc.py
 
 # 3. Flask + SR Server
 cd web-server
-python dnn_appLocalServer.py
+python dnn_appLocalServer.py --quality scale4
 
 # 4. 브라우저 (Chrome, DevTools → Disable cache)
 # http://163.152.162.202:8081/
@@ -105,7 +105,7 @@ Shorts_Codebook_Streaming_Testbed/
 
 ---
 
-## ToDo: Mobile Testbed
+<!-- ## ToDo: Mobile Testbed
 
 NEMO (MobiCom'20) 참조 — Android ExoPlayer + PyTorch Mobile / ExecuTorch 기반 SR 추론으로 확장 예정.
 
@@ -113,7 +113,7 @@ NEMO (MobiCom'20) 참조 — Android ExoPlayer + PyTorch Mobile / ExecuTorch 기
 |------|:---:|:---:|
 | 추론 위치 | process.py (서버 GPU) | 기기 내 (PyTorch Mobile) |
 | 전송 가정 | 서버에서 SR 후 1080p 반환 | 기기에서 직접 SR (270p만 수신) |
-| Codebook | 서버 메모리 | 앱 번들 사전 배포 |
+| Codebook | 서버 메모리 | 앱 번들 사전 배포 | -->
 
 ---
 

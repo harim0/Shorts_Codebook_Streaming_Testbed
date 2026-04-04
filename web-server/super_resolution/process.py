@@ -31,6 +31,12 @@ MAX_FPS =  30
 MAX_SEGMENT_LENGTH = 4
 SHARED_QUEUE_LEN = MAX_FPS * MAX_SEGMENT_LENGTH #Regulate GPU memory usage (> 3 would be fine)
 
+# ── PSNR 디버그 모드 ──────────────────────────────────────────────
+# True: 청크마다 CoarseSR PSNR + E2E Final PSNR 콘솔 출력 (처리 시간 증가)
+PSNR_DEBUG = True
+HR_CDN_BASE = "/home/harim/Shorts_Codebook_Streaming_Testbed/cdn-server/contentServer/dash/data"
+# ─────────────────────────────────────────────────────────────────
+
 def get_resolution(quality):
     assert quality in [0, 1, 2, 3]
 
@@ -290,6 +296,34 @@ def load_dnn_chunk(dnn_queue):
 #             print('exiting...')
 #             break
 
+def _load_hr_frames(vid):
+    """vid(예: 'Animal/SDR_Animal_3k7l') → HR MP4 로드 후 RGB uint8 프레임 리스트 반환."""
+    hr_path = os.path.join(HR_CDN_BASE, vid + '.mp4')
+    if not os.path.exists(hr_path):
+        print(f'[PSNR] HR file not found: {hr_path}')
+        return None
+    cap = cv2.VideoCapture(hr_path)
+    frames = []
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    cap.release()
+    print(f'[PSNR] loaded HR {vid}: {len(frames)} frames from {hr_path}')
+    return frames
+
+
+def _psnr(pred_hwc, ref_hwc):
+    """두 HWC uint8 numpy 배열 또는 CUDA tensor 간 PSNR (dB) 계산."""
+    if isinstance(pred_hwc, torch.Tensor):
+        pred_hwc = pred_hwc.cpu().numpy()
+    if isinstance(ref_hwc, torch.Tensor):
+        ref_hwc = ref_hwc.cpu().numpy()
+    mse = np.mean((pred_hwc.astype(np.float32) - ref_hwc.astype(np.float32)) ** 2)
+    return 10.0 * np.log10(255.0 ** 2 / mse) if mse > 0 else float('inf')
+
+
 def process_video_chunk(encode_queue, shared_tensor_list, data_queue):
     global model, ACTIVE_IMATRIX_VID, ACTIVE_CLASS_NAME
     global ACTIVE_MODEL_CLASS, LAST_CONFIGURED_VID, LAST_PROCESS_DIR
@@ -300,18 +334,37 @@ def process_video_chunk(encode_queue, shared_tensor_list, data_queue):
     current_class = None
     inference_time_list = []
 
+    # PSNR 디버그용
+    _hr_frames = None          # 현재 vid의 HR 프레임 리스트
+    _hr_vid_loaded = None      # 캐시 키
+    _psnr_coarse_list = []
+    _psnr_final_list  = []
+
     while True:
         try:
             input = data_queue.get()
             print("[process_video_chunk] input : ", input)
 
             if input[0] == 'configure':
+                # 이전 vid PSNR 요약 출력
+                if PSNR_DEBUG and _psnr_coarse_list:
+                    print(f'[PSNR] vid={_hr_vid_loaded} frames={len(_psnr_coarse_list)} '
+                          f'CoarseSR={np.mean(_psnr_coarse_list):.2f}dB '
+                          f'E2E-Final={np.mean(_psnr_final_list):.2f}dB')
+
                 targetWidth = input[2]  # width-based key (270 for LR, 1080 for HR)
                 current_vid = input[3] if len(input) > 3 else None
                 current_class = input[4] if len(input) > 4 else None
                 LAST_CONFIGURED_VID = current_vid
                 ACTIVE_CLASS_NAME = current_class
                 inference_time_list = []
+                _psnr_coarse_list = []
+                _psnr_final_list  = []
+
+                # PSNR 디버그: 새 vid HR 로드
+                if PSNR_DEBUG and current_vid and current_vid != _hr_vid_loaded:
+                    _hr_frames = _load_hr_frames(current_vid)
+                    _hr_vid_loaded = current_vid if _hr_frames else None
 
                 encode_queue.put(('index', 0))
 
@@ -354,7 +407,19 @@ def process_video_chunk(encode_queue, shared_tensor_list, data_queue):
                         print(f'[SR-IMATRIX] switched to vid={current_vid} shape={tuple(selected_imatrix.shape)} '
                               f'ACTIVE_MODEL_CLASS={ACTIVE_MODEL_CLASS}')
 
-                    output_ = model.infer_with_imatrix(lr_prev, lr_curr, frame_count)
+                    if PSNR_DEBUG and _hr_frames is not None:
+                        output_, x_coarse_hwc = model.infer_with_imatrix(
+                            lr_prev, lr_curr, frame_count, return_coarse=True)
+                        hr_idx = frame_count % len(_hr_frames)
+                        hr_frame = _hr_frames[hr_idx]
+                        # HR 크기 맞추기 (모델 출력과 다를 경우)
+                        h, w = output_.shape[:2] if isinstance(output_, torch.Tensor) else output_.shape[:2]
+                        if hr_frame.shape[0] != h or hr_frame.shape[1] != w:
+                            hr_frame = cv2.resize(hr_frame, (w, h), interpolation=cv2.INTER_AREA)
+                        _psnr_coarse_list.append(_psnr(x_coarse_hwc, hr_frame))
+                        _psnr_final_list.append(_psnr(output_, hr_frame))
+                    else:
+                        output_ = model.infer_with_imatrix(lr_prev, lr_curr, frame_count)
 
                     if frame_count in (0, 1, 2):
                         print(f'[SR-INFER] mode=with_imatrix vid={current_vid} frame={frame_count}')
@@ -384,6 +449,10 @@ def process_video_chunk(encode_queue, shared_tensor_list, data_queue):
                           f'ACTIVE_MODEL_CLASS={ACTIVE_MODEL_CLASS} '
                           f'ACTIVE_IMATRIX_VID={ACTIVE_IMATRIX_VID} '
                           f'process_dir={process_dir}')
+                    if PSNR_DEBUG and _psnr_coarse_list:
+                        print(f'[PSNR] vid={current_vid} chunk_avg(0~95) '
+                              f'CoarseSR={np.mean(_psnr_coarse_list):.2f}dB '
+                              f'E2E-Final={np.mean(_psnr_final_list):.2f}dB')
             else:
                 print('sr: Invalid input')
 

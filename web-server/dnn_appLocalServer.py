@@ -226,28 +226,27 @@ def receive_imatrix():
 @app.route('/dnn_config', methods=['GET', 'POST'])
 def config():
     global fps
-    #Representation index : 0-low, 1-medium, 2-high, 3-scale4, 4-single(whole)
-    #Quality index : 0-240p, 1-360p, 2-480p, 3-720p, 4-1080p
-    config = json.loads(request.data)
-    fps = int(config['frameRate']['fps'])
     config_start = time.time()
+    try:
+        cfg = json.loads(request.data)
+    except Exception:
+        resp = flask.Response('bad request', status=400)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
 
-    #process mock DNNs test
-    DNN_list = []
-    for idx in range(4):
-        dnn_quality = config['Representation'][idx]['Quality']
-        DNN_list.append((int(dnn_quality[0]['layer']), int(dnn_quality[0]['feature'])))
+    fps = int(cfg.get('frameRate', {}).get('fps', 30))
 
-    print (DNN_list)
-    print ('fps returned is {}'.format(fps))
-    duration = 4
-    app.config['dnn_queue'].put(('test_dnn', DNN_list, fps, duration, test_input))
+    # Codebook: cluster id + model names
+    cluster_node = cfg.get('cluster', {})
+    cluster_id = cluster_node.get('id', '') if isinstance(cluster_node, dict) else ''
 
-    input = test_output.recv()
-    print('Selected DNN index is {}'.format(input[0]))
-    dnn_selection = input[0]
-    #dnn_selection = 2
-    print ('config eplased:' + str(time.time() - config_start))
+    vid = cfg.get('vid', '')
+
+    print(f'[dnn_config] vid={vid} cluster={cluster_id} fps={fps}')
+    print(f'[dnn_config] elapsed: {time.time() - config_start:.3f}s')
+
+    # Codebook SR은 단일 모델(decoder+coarse_sr), inference_idx 고정 = 0
+    dnn_selection = 0
 
     resp = flask.Response('DNN Quality select: ' + str(dnn_selection))
     resp.headers['Access-Control-Allow-Origin'] = '*'

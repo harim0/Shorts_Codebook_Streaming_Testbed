@@ -48,7 +48,11 @@ async function runPlayback() {
   // ---------- 현재 아이템 이벤트 바인딩 ----------
   let unbind = () => {};
   player.attachView(view);
-  
+
+  if (!window.DNN_STATE) {
+    window.DNN_STATE = { byVid: Object.create(null), byPlayerIdx: Object.create(null) };
+  }
+
   function mpd(pid) {
     return `${cdnaddress}${pid}/multi_resolution.mpd?v=${(performance.now()|0)}`;
   }

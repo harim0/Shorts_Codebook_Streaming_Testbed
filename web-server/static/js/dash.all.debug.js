@@ -31931,13 +31931,6 @@ function StreamProcessor(config) {
 
     function getFragmentRequest(representationInfo, time, options) {
         var fragRequest = null;
-        var hasSeekTarget = !!(scheduleController &&
-                           typeof scheduleController.getSeekTarget === 'function' &&
-                           !isNaN(scheduleController.getSeekTarget()));
-        console.warn('[SP]', type, 'getFragmentRequest => null (useTime=', time, 'hasSeekTarget=', hasSeekTarget, ')');
-        // console.log("====");
-        // console.log(representationInfo);
-        // console.log("****");
 
         if (indexHandler) {
             var representation = representationController && representationInfo ? representationController.getRepresentationForQuality(representationInfo.quality) : null;
@@ -31949,7 +31942,9 @@ function StreamProcessor(config) {
             } else {
                 fragRequest = indexHandler.getNextSegmentRequest(getMediaInfo(), representation);
             }
-            console.log('[SP]', type, 'req idx=', fragRequest.index, 'start=', fragRequest.startTime, 'dur=', fragRequest.duration);
+            if (fragRequest) {
+                console.log('[SP]', type, 'req idx=', fragRequest.index, 'start=', fragRequest.startTime, 'dur=', fragRequest.duration);
+            }
         }
 
         return fragRequest;
@@ -35925,7 +35920,7 @@ function FragmentController(config) {
               console.log("[DNN] INIT fragment, vid=", vid,
                   "streamId=", streamInfo.id, "index=", e.request.index);
               send2DNNprocess(chunk);
-          } else if (dnnCtx.bufferLevel > 4 && chunk.quality != 4) { 
+          } else if (dnnCtx && dnnCtx.SR_buffer && dnnCtx.bufferLevel > 4 && chunk.quality != 4) {
             dnnCtx.SR_buffer.push(chunk);
             console.log("[DNN] push to SR queue, vid=", vid,
                 "q=", chunk.quality, "idx=", chunk.index);

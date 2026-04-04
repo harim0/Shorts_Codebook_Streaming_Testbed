@@ -17,7 +17,7 @@ _CODEBOOK_REPO = "/home/harim/Short-form-Video-Codebook-Switching"
 if _CODEBOOK_REPO not in sys.path:
     sys.path.insert(0, _CODEBOOK_REPO)
 
-from models.tex_vqvae8_light import TexVQVAE  # noqa: E402
+from model.tex_vqvae8_light import TexVQVAE  # noqa: E402
 
 DEFAULT_CKPT = os.path.join(
     os.path.dirname(__file__),
@@ -97,19 +97,18 @@ class CodebookSR:
     def infer_with_imatrix(self,
                            lr_prev_hwc: torch.Tensor,
                            lr_curr_hwc: torch.Tensor,
-                           frame_idx: int) -> torch.Tensor:
+                           frame_idx: int,
+                           return_coarse: bool = False):
         """
         i-matrix lookup 기반 추론 (encoder 실행 없음).
-        Client 동작 시뮬레이션:
-          z_q_low = L2_normalize(embedding.weight)[imatrix[frame_idx]]
-          z_q     = proj_up(z_q_low)
-          x_hat   = decoder(z_q, coarse_sr(LR_triplet))
 
         Args:
             lr_prev/curr_hwc: CUDA tensor HWC uint8
             frame_idx: current frame index into imatrix
+            return_coarse: True이면 (x_hat, x_coarse) 둘 다 반환 (PSNR 디버그용)
         Returns:
-            SR frame: CUDA tensor HWC uint8
+            return_coarse=False: SR frame CUDA tensor HWC uint8
+            return_coarse=True:  (x_hat HWC uint8, x_coarse HWC uint8)
         """
         if self._imatrix is None:
             raise RuntimeError("imatrix not set — call set_imatrix() first")
@@ -122,7 +121,7 @@ class CodebookSR:
 
         # 1. Coarse SR (temporal triplet, next=curr)
         lr_concat = torch.cat([prev_t, curr_t, curr_t], dim=1)
-        x_coarse  = self.model.coarse_sr(lr_concat)           # (1, 32, 1080, 1920)
+        x_coarse  = self.model.coarse_sr(lr_concat)           # (1, 3, 1080, 1920)
 
         # 2. Codebook lookup — NO encoder
         indices = self._imatrix[frame_idx % len(self._imatrix)]  # (135, 240)
@@ -136,8 +135,11 @@ class CodebookSR:
         x_hat = self.model.decoder(z_q, x_coarse)             # (1, 3, 1080, 1920)
 
         # BCHW → HWC uint8
-        x_hat = x_hat.squeeze(0).permute(1, 2, 0)
-        return (x_hat * 255.0).clamp(0, 255).byte()
+        x_hat_hwc = (x_hat.squeeze(0).permute(1, 2, 0) * 255.0).clamp(0, 255).byte()
+        if return_coarse:
+            x_coarse_hwc = (x_coarse.squeeze(0).permute(1, 2, 0) * 255.0).clamp(0, 255).byte()
+            return x_hat_hwc, x_coarse_hwc
+        return x_hat_hwc
 
     @torch.no_grad()
     def infer_tensor(self,
