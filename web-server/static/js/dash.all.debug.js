@@ -37980,7 +37980,7 @@ function ScheduleController(config) {
     var chunk_num = 0;
     var dnn_load = 0;
 
-    // Codebook SR: decoder.pt + coarse_sr.pt 두 파일을 CDN에서 GET → Flask /dnn 으로 POST
+    // (26.04.02) Codebook SR: decoder.pt + coarse_sr.pt 두 파일을 CDN에서 GET → Flask /dnn 으로 POST
     function send_DNN_Request_codebook() {
         var playerId = mediaPlayer.getPlayerId();
         var ctx = window.DNN_STATE.byPlayerIdx[playerId];

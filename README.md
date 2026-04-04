@@ -82,7 +82,7 @@ Shorts_Codebook_Streaming_Testbed/
 │       ├── process.py                 # 멀티프로세스 SR 파이프라인
 │       ├── codebook_sr.py             # CodebookSR 추론 래퍼
 │       └── model/
-│           ├── tex_vqvae8.py          # tex-VQVAE 모델 정의
+│           ├── tex_vqvae8_light.py    # tex-VQVAE 모델 정의 (추론 시 사용)
 │           └── {class}/
 │               ├── decoder.pt         # per-cluster Decoder 가중치
 │               └── coarse_sr.pt       # per-cluster Coarse-SR 가중치
@@ -91,12 +91,14 @@ Shorts_Codebook_Streaming_Testbed/
 ├── cdn-server/contentServer/
 │   └── dash/
 │       ├── data/{class}/{vid}/
-│       │   ├── multi_resolution.mpd   # DASH manifest
-│       │   ├── imatrix.pt             # HR→encoder 기반 i-matrix (150fr, 240×135)
-│       │   └── segment_0_{idx}.m4s    # 270p LR 세그먼트
+│       │   ├── multi_resolution.mpd   # DASH manifest (h264 + vp9, 270p × 2 Representation)
+│       │   ├── imatrix.pt             # HR→encoder 기반 i-matrix (~9.3MB)
+│       │   ├── init_0.mp4             # h264 초기화 세그먼트
+│       │   ├── segment_0_{idx}.m4s    # h264 270p LR 세그먼트
+│       │   └── {vid}.mp4              # HR 원본 (PSNR 측정용)
 │       └── model/{class}/
-│           ├── decoder.pt             # Decoder 가중치
-│           └── coarse_sr.pt           # Coarse-SR 가중치
+│           ├── decoder.pt             # Decoder 가중치 (~880KB)
+│           └── coarse_sr.pt           # Coarse-SR 가중치 (~929KB)
 └── simulation/
     ├── run_simulation.py              # E2E 시뮬레이션 (PSNR 포함)
     ├── plot_results.py                # 결과 시각화

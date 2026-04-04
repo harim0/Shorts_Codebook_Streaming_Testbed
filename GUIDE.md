@@ -155,7 +155,7 @@ data.append('jsondata', JSON.stringify(chunk));  // quality, index, fps, duratio
 | `/imatrix` | POST | imatrix.pt 저장 → dnn_queue | `dnn_queue.put(('imatrix', vid, path))` |
 | `/dnn` | POST | decoder.pt / coarse_sr.pt 저장; 둘 다 있으면 → dnn_queue | `dnn_queue.put(('dnn_model', class, dec, csr))` |
 | `/uploader` | POST | 세그먼트 수신 → decode_queue → SR 완료 대기 → 1080p mp4 응답 | `decode_queue.put(...)` |
-| `/dnn_config` | POST | 초기 handshake (legacy, inference_idx 테스트용) | `dnn_queue.put(('test_dnn', ...))` |
+| `/dnn_config` | POST | 초기 handshake (Codebook 구조에서는 `dnn_selection=0` 고정 반환) | — |
 | `/uploadPlayback` | GET | 재생 메트릭 수집 | — |
 | `/uploadRebuffer` | GET | 리버퍼링 이벤트 수집 | — |
 
@@ -177,10 +177,14 @@ MPC 5-horizon 탐색으로 quality 결정:
 ```
 cdn-server/contentServer/dash/
 ├── data/{class}/{vid}/
-│   ├── multi_resolution.mpd       # DASH manifest (4 Representation: 270p/360p/540p/1080p)
+│   ├── multi_resolution.mpd       # DASH manifest (Representation 2개: h264 270p + vp9 270p)
 │   ├── imatrix.pt                 # (n_frames, 240, 135) int16, ~9.3MB
-│   ├── init_0.m4s                 # 270p 초기화 세그먼트
-│   └── segment_0_{1..N}.m4s      # 270p LR 세그먼트 (~183KB)
+│   ├── init_0.mp4                 # h264(id=0) 초기화 세그먼트
+│   ├── init_1.mp4                 # vp9(id=1) 초기화 세그먼트
+│   ├── segment_0_{1..N}.m4s      # h264 270p LR 세그먼트 (seg1 ~179KB, seg2 ~55KB)
+│   ├── segment_1_{1..N}.m4s      # vp9 270p LR 세그먼트
+│   ├── {vid}.mp4                  # HR 원본 (PSNR 측정용, SR 파이프라인 미사용)
+│   └── {codec}_400k.mp4           # 인코딩 중간 산출물
 └── model/{class}/
     ├── decoder.pt                 # ~880KB
     └── coarse_sr.pt               # ~929KB
@@ -214,8 +218,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 | Location | 역할 |
 |----------|------|
-| `/dash/data/{vid}/` | MPD 매니페스트, 해상도별 `.m4s` segment 서빙 |
-| `/dash/model/{vid}/` | DNN 모델 chunk (`DNN_chunk_N.pth`) 서빙 |
+| `/dash/data/{class}/{vid}/` | MPD, imatrix.pt, init/segment .m4s 서빙 |
+| `/dash/model/{class}/` | `decoder.pt`, `coarse_sr.pt` 서빙 |
 
 이 파일이 없거나 비활성화되면 브라우저가 영상/MPD를 전혀 읽지 못한다.
 
@@ -269,22 +273,22 @@ nginx 8333 레이어가 이를 숨기고 허용 origin을 `http://{SERVER_IP}:80
 
 > **이 파일 없이 구동하려면**: `dash.all.debug.js`에서 8333 → 8334로 포트 번호 변경 후 nginx 없이 Python 서버 CORS(`*`)를 그대로 사용 가능.
 
-```bash
+```nginx
 # /etc/nginx/sites-available/dashlet-cdn
 server {
     listen 8080 default_server;
     server_name _;
 
-    root /home/harim/Dashlet_www;
+    root /home/harim/Shorts_Codebook_Streaming_Testbed;
     index index.html index.htm;
 
     location ^~ /dash/data/ {
-        alias /home/harim/Dashlet_www/cdn-server/contentServer/dash/data/;
+        alias /home/harim/Shorts_Codebook_Streaming_Testbed/cdn-server/contentServer/dash/data/;
         autoindex on;
-        etag off;                     # ETag 생성 X
-        if_modified_since off;        # If-Modified-Since 무시
-        
-         add_header Cache-Control "no-store" always;
+        etag off;
+        if_modified_since off;
+
+        add_header Cache-Control "no-store" always;
         add_header Access-Control-Allow-Origin http://163.152.162.202:8081 always;
         add_header Access-Control-Allow-Headers * always;
         add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
@@ -296,31 +300,27 @@ server {
         }
         default_type application/octet-stream;
         try_files $uri =404;
-    } 
-
-    location ^~ /dash/model/ {
-
-    # OPTIONS preflight 전용 location
-    if ($request_method = OPTIONS) {
-        return 204;
     }
 
-    # GET/POST 응답
-    add_header Access-Control-Allow-Origin "http://163.152.162.202:8081" always;
-    add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
-    add_header Access-Control-Allow-Headers "Range, Content-Type, X-Requested-With" always;
-    add_header Access-Control-Expose-Headers "Content-Range, Accept-Ranges" always;
-
-    alias /home/harim/Dashlet_www/cdn-server/contentServer/dash/model/;
-    autoindex on;
-    etag off;
-    if_modified_since off;
-    add_header Accept-Ranges bytes;
-
-    default_type application/octet-stream;
-    try_files $uri =404;
+    location ^~ /dash/model/ {
+        if ($request_method = OPTIONS) {
+            return 204;
         }
- 
+
+        add_header Access-Control-Allow-Origin "http://163.152.162.202:8081" always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Range, Content-Type, X-Requested-With" always;
+        add_header Access-Control-Expose-Headers "Content-Range, Accept-Ranges" always;
+
+        alias /home/harim/Shorts_Codebook_Streaming_Testbed/cdn-server/contentServer/dash/model/;
+        autoindex on;
+        etag off;
+        if_modified_since off;
+        add_header Accept-Ranges bytes;
+
+        default_type application/octet-stream;
+        try_files $uri =404;
+    }
 }
 ```
 
